@@ -1,0 +1,6 @@
+{
+  "name": "LIRAVEN",
+  "description": "A modern futuristic learning platform for Class 10 students with subjects, study notes, AI-powered tutor chatbot, user dashboards, and secure donation options. Engineered with React, Tailwind CSS, Firebase, and Gemini AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

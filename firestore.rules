@@ -1,0 +1,116 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net Default-Deny Catch-All
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reuseable global security verification helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Schema Validation Helpers
+    function isValidUserProfile(data) {
+      return data.uid is string 
+        && data.uid == request.auth.uid
+        && data.displayName is string 
+        && data.displayName.size() <= 100
+        && data.email is string 
+        && data.email == request.auth.token.email
+        && data.photoURL is string
+        && data.savedNotes is list
+        && data.searchHistory is list;
+    }
+
+    function isValidChatQuery(data) {
+      return data.queryId is string
+        && data.userId is string
+        && data.userId == request.auth.uid
+        && data.subject is string
+        && data.subject.size() <= 100
+        && data.question is string
+        && data.question.size() <= 5000
+        && data.answer is string
+        && data.answer.size() <= 20000
+        && data.language is string
+        && (data.language == 'en' || data.language == 'hi');
+    }
+
+    function isValidDonation(data) {
+      return data.donationId is string
+        && data.donorName is string
+        && data.donorName.size() <= 100
+        && data.amount is number
+        && data.amount > 0
+        && data.amount <= 100000
+        && data.paymentMethod is string
+        && (data.paymentMethod == 'Razorpay' || data.paymentMethod == 'UPI')
+        && data.status is string
+        && (data.status == 'success' || data.status == 'pending');
+    }
+
+    // 1. Student User Profile Rules
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) 
+        && isEmailVerified()
+        && isValidUserProfile(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+        
+      allow update: if isOwner(userId)
+        && isEmailVerified()
+        && isValidUserProfile(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasAny(['displayName', 'photoURL', 'savedNotes', 'searchHistory']);
+        
+      allow delete: if false; // Profiles are permanent
+    }
+
+    // 2. Chat queries history rules
+    match /queries/{queryId} {
+      allow get, list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn()
+        && isEmailVerified()
+        && isValidId(queryId)
+        && isValidChatQuery(incoming())
+        && incoming().createdAt == request.time;
+        
+      allow update, delete: if false; // Immutable database entries
+    }
+
+    // 3. Donation and transactions rules
+    match /donations/{donationId} {
+      allow list, get: if isSignedIn(); // Logged in students can view their contribution feed
+      allow create: if isValidId(donationId)
+        && isValidDonation(incoming())
+        && incoming().createdAt == request.time;
+        
+      allow update, delete: if false; // Immutable ledger structure
+    }
+  }
+}
